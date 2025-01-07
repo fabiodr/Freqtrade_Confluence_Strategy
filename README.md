@@ -2,7 +2,7 @@
 Robô de trade configurado para o freqtrade 
 IntegrativeConfluenceStrategy: Documentação Completa (README)
 
-Descrição
+# Descrição
 
 A IntegrativeConfluenceStrategy é uma estratégia de trading para o Freqtrade, projetada para capturar reversões usando Bollinger Bands, RSI, ADX e Volume como critérios principais. Ela implementa uma abordagem clara e precisa de gerenciamento de riscos:
 	1.	Take Profit (TP) é definido primeiro, utilizando Bollinger Bands, pivôs recentes e fallback com ATR.
@@ -11,7 +11,7 @@ A IntegrativeConfluenceStrategy é uma estratégia de trading para o Freqtrade, 
 
 Essa estratégia é configurada para timeframe de 1h e não requer validações em timeframes adicionais.
 
-Características
+# Características
 	•	Foco em reversões extremas:
 	•	LONG: close < bb_lower
 	•	SHORT: close > bb_upper
@@ -27,7 +27,7 @@ Características
 	•	Custom Stoploss:
 	•	Garante saídas claras (TP, SL ou Time-Based Stop).
 
-Parâmetros
+# Parâmetros
 	•	Bollinger Bands:
 	•	bb_period: Período para cálculo das bandas (ex.: 20).
 	•	bb_dev: Desvio padrão para definir as bandas superior/inferior (ex.: 2.0).
@@ -51,7 +51,7 @@ Parâmetros
 	•	Fibonacci:
 	•	use_fib: (Opcional) Incluir Fibonacci como candidato para TP.
 
-Lógica de Funcionamento
+# Lógica de Funcionamento
 	1.	Take Profit (TP):
 	•	Calculado primeiro, com base em:
 	•	Bollinger Bands:
@@ -87,7 +87,7 @@ Lógica de Funcionamento
 	•	Stop Loss (SL).
 	•	Time-Based Stop: Encerra trades com duração superior ao limite configurado (max_trade_duration_in_hours).
 
-Código
+# Código
 
 O código completo está disponível no arquivo IntegrativeConfluenceStrategy.py. Ele inclui:
 	•	Funções de cálculo de TP e SL: calc_takeprofit_stoploss_v4.
@@ -95,7 +95,7 @@ O código completo está disponível no arquivo IntegrativeConfluenceStrategy.py
 	•	Lógica de entrada: populate_entry_trend.
 	•	Controle de saída: custom_stoploss.
 
-Exemplo de Configuração
+# Exemplo de Configuração
 
 {
   "strategy": "IntegrativeConfluenceStrategy",
@@ -107,7 +107,7 @@ Exemplo de Configuração
   "custom_entry_point": true
 }
 
-Observações
+# Observações
 	1.	Ajuste de Parâmetros:
 	•	Para mais trades:
 	•	Use close < bb_mid (LONG) e close > bb_mid (SHORT).
@@ -120,4 +120,4 @@ Observações
 	•	Ative logs (debug_logs=True) para verificar o cálculo de TP e SL.
 	•	Utilize print ou logger.info nos pontos de cálculo.
 
-Essa estratégia é flexível e pode ser ajustada para diferentes mercados e condições. Ajuste os parâmetros para encontrar o equilíbrio ideal entre frequência e qualidade dos trades.
+///Essa estratégia é flexível e pode ser ajustada para diferentes mercados e condições. Ajuste os parâmetros para encontrar o equilíbrio ideal entre frequência e qualidade dos trades.
