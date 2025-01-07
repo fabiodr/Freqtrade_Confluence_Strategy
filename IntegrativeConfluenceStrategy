@@ -181,34 +181,42 @@ class IntegrativeConfluenceStrategy(IStrategy):
     debug_logs = False
 
     def populate_indicators(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
-        """
-        Calcula Bollinger, RSI, ADX, volume e ATR.
-        """
-        # Bollinger
-        upper_bb, mid_bb, lower_bb = ta.BBANDS(
-            df,
-            timeperiod=self.bb_period.value,
-            nbdevup=self.bb_dev.value,
-            nbdevdn=self.bb_dev.value,
-            matype=0
-        )
-        df["bb_upper"] = upper_bb.astype(float)
-        df["bb_mid"]   = mid_bb.astype(float)
-        df["bb_lower"] = lower_bb.astype(float)
+    """
+    Calcula Bollinger, RSI, ADX, Volume e ATR.
+    """
+    # Garantir que a coluna "close" seja numérica
+    df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
-        # RSI
-        df["rsi"] = ta.RSI(df, timeperiod=self.rsi_period.value)
+    # Bollinger Bands
+    upper_bb, mid_bb, lower_bb = ta.BBANDS(
+        df,
+        timeperiod=self.bb_period.value,
+        nbdevup=self.bb_dev.value,
+        nbdevdn=self.bb_dev.value,
+        matype=0
+    )
+    # Validar os resultados
+    if upper_bb is None or mid_bb is None or lower_bb is None:
+        raise ValueError("Erro no cálculo de Bollinger Bands: valores nulos detectados.")
 
-        # ADX
-        df["adx"] = ta.ADX(df)
+    # Garantir que os valores sejam numéricos
+    df["bb_upper"] = pd.to_numeric(upper_bb, errors="coerce")
+    df["bb_mid"]   = pd.to_numeric(mid_bb, errors="coerce")
+    df["bb_lower"] = pd.to_numeric(lower_bb, errors="coerce")
 
-        # Volume
-        df["vol_ma"] = ta.SMA(df["volume"], timeperiod=self.vol_ma_len.value)
+    # RSI
+    df["rsi"] = ta.RSI(df, timeperiod=self.rsi_period.value)
 
-        # ATR
-        df["atr"] = ta.ATR(df, timeperiod=self.atr_period.value)
+    # ADX
+    df["adx"] = ta.ADX(df)
 
-        return df
+    # Volume
+    df["vol_ma"] = ta.SMA(df["volume"], timeperiod=self.vol_ma_len.value)
+
+    # ATR
+    df["atr"] = ta.ATR(df, timeperiod=self.atr_period.value)
+
+    return df
 
     def populate_entry_trend(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
         """
