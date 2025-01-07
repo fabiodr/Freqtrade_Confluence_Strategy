@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.freqtrade.io/schema.json",
+
+  "exchange": {
+    "name": "binance",
+    "ccxt_config": {
+      "enableRateLimit": true,
+      "options": {
+        "defaultType": "future",
+        "defaultMarginMode": "isolated"
+      }
+    },
+    "pair_whitelist": [
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT",
+      "LTC/USDT:USDT",
+      "LINK/USDT:USDT"
+    ]
+  },
+
+  "pairlists": [
+    {
+      "method": "StaticPairList"
+    }
+  ],
+
+  "trading_mode": "futures",
+  "margin_mode": "isolated",
+  "dry_run": true,
+
+  "stake_currency": "USDT",
+  "max_open_trades": 5,
+  "stake_amount": "unlimited",
+  "tradable_balance_ratio": 0.99,
+
+  "timeframe": "1h",
+  "timerange": "20220101-20241231",
+  "dataformat_ohlcv": "json",
+  "export": "none",
+
+  "order_types": {
+    "entry": "market",
+    "exit": "market",
+    "stoploss": "market",
+    "stoploss_on_exchange": false,
+    "stoploss_on_exchange_interval": 60
+  },
+
+  "entry_pricing": {
+    "price_side": "other",
+    "use_order_book": true,
+    "order_book_top": 1
+  },
+
+  "exit_pricing": {
+    "price_side": "other",
+    "use_order_book": true,
+    "order_book_top": 1
+  },
+
+  "strategy": "IntegrativeConfluenceStrategy"
+}
