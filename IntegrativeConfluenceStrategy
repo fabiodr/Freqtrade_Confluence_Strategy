@@ -277,46 +277,49 @@ class IntegrativeConfluenceStrategy(IStrategy):
         df["exit_short"] = 0
         return df
 
-    def custom_stoploss(
-        self,
-        pair: str,
-        trade: Trade,
-        current_time: datetime,
-        current_rate: float,
-        current_profit: float,
-        **kwargs
-    ) -> float:
-        """
-        Lê do enter_tag: "TP=...|SL=...|RR=...".
-        Fecha se bater STOP ou TP. Aplica time-based stop.
-        """
+def custom_stoploss(
+    self,
+    pair: str,
+    trade: Trade,
+    current_time: datetime,
+    current_rate: float,
+    current_profit: float,
+    **kwargs
+) -> float:
+    """
+    Lê do enter_tag: "TP=...|SL=...|RR=...".
+    Fecha se bater STOP ou TP, e aplica time-based stop.
+    """
 
-        if not trade.enter_tag:
-            return 1.0  # fallback
+    if not trade.enter_tag:
+        return 1.0  # fallback
 
-        try:
-            parts = trade.enter_tag.split("|")
-            tp_ = float(parts[0].split("=")[1])  # "TP=xxx"
-            sl_ = float(parts[1].split("=")[1])  # "SL=yyy"
-        except Exception:
-            return 1.0
-
-        # STOP/TP
-        if trade.is_long:
-            if current_rate <= sl_:
-                return 0.0  # stop
-            if current_rate >= tp_:
-                return -0.0001  # take-profit
-        else:
-            # SHORT
-            if current_rate >= sl_:
-                return 0.0
-            if current_rate <= tp_:
-                return -0.0001
-
-        # Time-based stop
-        dur_hours = (current_time - trade.open_date_utc).total_seconds() / 3600.0
-        if dur_hours >= self.max_trade_duration_in_hours.value:
-            return -0.0001
-
+    try:
+        parts = trade.enter_tag.split("|")
+        tp_ = float(parts[0].split("=")[1])  # "TP=xxx"
+        sl_ = float(parts[1].split("=")[1])  # "SL=yyy"
+    except Exception:
         return 1.0
+
+    # Substitui 'is_long' por 'trade_type == "long"'
+    is_long = (trade.trade_type == "long")
+
+    if is_long:
+        # LONG
+        if current_rate <= sl_:
+            return 0.0  # stop
+        if current_rate >= tp_:
+            return -0.0001  # tp
+    else:
+        # SHORT
+        if current_rate >= sl_:
+            return 0.0  # stop
+        if current_rate <= tp_:
+            return -0.0001  # tp
+
+    # Time-based stop
+    dur_hours = (current_time - trade.open_date_utc).total_seconds() / 3600.0
+    if dur_hours >= self.max_trade_duration_in_hours.value:
+        return -0.0001
+
+    return 1.0
