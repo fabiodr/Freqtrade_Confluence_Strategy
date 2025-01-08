@@ -5,7 +5,7 @@ import talib.abstract as ta
 from freqtrade.strategy.interface import IStrategy
 from freqtrade.strategy import IntParameter, DecimalParameter
 from freqtrade.persistence import Trade
-from datetime import datetime
+from datetime import datetime, timedelta
 
 ##############################################################################
 #                       Funções Auxiliares
@@ -48,88 +48,118 @@ def calc_takeprofit_stoploss_v4(
     rr_min: float,
     atr_factor: float,
     max_stop_factor: float,
+    debug: bool = False
 ) -> (float, float):
     """
-    Calcula TP e SL com base em Bollinger Bands, pivôs e fallback de ATR.
+    Calcula TP e SL com base em Bollinger Bands, highs/lows recentes e fallback de ATR.
     - rr_min: relação R:R mínima desejada (ex.: 2.0 -> 1:2).
     - atr_factor: multiplica ATR para determinar fallback do TP.
     - max_stop_factor: multiplica ATR para limitar a distância máxima do SL.
-
     Retorna (tp, sl). Se inviável, retorna (None, None).
+
+    debug: se True, imprime logs de debug.
     """
     close_ = dataframe.at[idx, "close"]
-    atr_ = dataframe.at[idx, "atr"]
-
+    atr_   = dataframe.at[idx, "atr"]
     bb_upper = dataframe.at[idx, "bb_upper"]
     bb_lower = dataframe.at[idx, "bb_lower"]
 
-    # Recupera últimos 20 candles para achar recent_high/low
+    # Recupera últimos 20 candles p/ encontrar recent_high/low
     lookback_bars = 20
     recent_slice = dataframe.iloc[max(0, idx - lookback_bars) : idx + 1]
     recent_high = recent_slice["high"].max()
-    recent_low = recent_slice["low"].min()
+    recent_low  = recent_slice["low"].min()
 
     # Monta lista de candidatos a TP
     tp_candidates = []
 
     if is_long:
-        # Bollinger e pivô acima do close
-        if bb_upper > close_:
+        # Bollinger + pivot
+        if (not pd.isna(bb_upper)) and (bb_upper > close_):
             tp_candidates.append(bb_upper)
+
         if recent_high > close_:
             tp_candidates.append(recent_high)
+
         # Fallback ATR
         tp_candidates.append(close_ + (atr_factor * atr_))
         # Filtra apenas valores acima do preço
         tp_candidates = [tp for tp in tp_candidates if tp > close_]
+
         if not tp_candidates:
+            if debug:
+                print(f"[calc_tp_sl] idx={idx}, LONG => Nenhum TP acima de close.")
             return None, None
 
-        # Pega alvo "mais próximo" acima do close
+        # Alvo "mais próximo" acima do close
         tp_ = min(tp_candidates)
         dist_tp = tp_ - close_
 
         if dist_tp < 0.00001:
+            if debug:
+                print(f"[calc_tp_sl] idx={idx}, LONG => dist_tp muito pequeno.")
             return None, None
 
         # Calcula SL => R:R >= rr_min
         sl_ = close_ - (dist_tp / rr_min)
         if sl_ >= close_:
+            if debug:
+                print(f"[calc_tp_sl] idx={idx}, LONG => SL >= close_ => inviável.")
             return None, None
 
         # Limita SL se ficar muito distante
         max_stop_dist = atr_ * max_stop_factor
         if (close_ - sl_) > max_stop_dist:
+            if debug:
+                print(f"[calc_tp_sl] idx={idx}, LONG => SL muito distante. (close_ - sl_ = {close_ - sl_:.3f})")
             return None, None
+
+        if debug:
+            print(f"[calc_tp_sl] idx={idx}, LONG => close={close_:.3f}, tp={tp_:.3f}, sl={sl_:.3f}")
 
     else:
         # SHORT
-        if bb_lower < close_:
+        if (not pd.isna(bb_lower)) and (bb_lower < close_):
             tp_candidates.append(bb_lower)
+
         if recent_low < close_:
             tp_candidates.append(recent_low)
+
         # Fallback ATR
         tp_candidates.append(close_ - (atr_factor * atr_))
+
         # Filtra valores abaixo do preço
         tp_candidates = [tp for tp in tp_candidates if tp < close_]
+
         if not tp_candidates:
+            if debug:
+                print(f"[calc_tp_sl] idx={idx}, SHORT => Nenhum TP abaixo de close.")
             return None, None
 
-        # Pega alvo mais próximo abaixo do close
+        # Alvo mais próximo abaixo do close
         tp_ = max(tp_candidates)
         dist_tp = close_ - tp_
 
         if dist_tp < 0.00001:
+            if debug:
+                print(f"[calc_tp_sl] idx={idx}, SHORT => dist_tp muito pequeno.")
             return None, None
 
         # SL => R:R >= rr_min
         sl_ = close_ + (dist_tp / rr_min)
         if sl_ <= close_:
+            if debug:
+                print(f"[calc_tp_sl] idx={idx}, SHORT => SL <= close_ => inviável.")
             return None, None
 
         max_stop_dist = atr_ * max_stop_factor
         if (sl_ - close_) > max_stop_dist:
+            if debug:
+                print(f"[calc_tp_sl] idx={idx}, SHORT => SL muito distante. (sl_ - close_ = {sl_ - close_:.3f})")
             return None, None
+
+        if debug:
+            print(f"[calc_tp_sl] idx={idx}, SHORT => close={close_:.3f}, tp={tp_:.3f}, sl={sl_:.3f}")
 
     return (tp_, sl_)
 
@@ -140,17 +170,19 @@ def calc_takeprofit_stoploss_v4(
 
 class IntegrativeConfluenceStrategy(IStrategy):
     """
-    Estratégia de ex. que:
+    Estratégia de exemplo que:
       - Usa Bollinger Bands (bb_upper/bb_lower), RSI, ADX, Volume e ATR.
       - Define TP e SL (R:R) usando calc_takeprofit_stoploss_v4().
       - Rejeita trades se R:R não for atingido ou se SL ficar inviável.
       - Time-based stop via custom_stoploss.
+      - Exemplos de parâmetros menos restritivos para aumentar frequência.
+      - Adota startup_candle_count para evitar problemas de NaN inicial.
 
-    Se estiver gerando poucos trades, considere:
-     - relaxar cond_bb (ex.: close < bb_mid),
-     - reduzir self.bb_dev,
-     - baixar self.adx_thr,
-     - etc.
+    Dicas para mais trades:
+     - Usar close < bb_mid (LONG) / close > bb_mid (SHORT) ao invés de bb_lower/bb_upper.
+     - Reduzir bb_dev para ~1.5
+     - Baixar adx_thr para ~15
+     - Aumentar rsi_upper para ~75 e diminuir rsi_lower para ~25
     """
 
     INTERFACE_VERSION = 3
@@ -162,87 +194,85 @@ class IntegrativeConfluenceStrategy(IStrategy):
     stoploss = -0.99
     trailing_stop = False
 
-    # ------------------
-    # Parâmetros Bollinger
-    bb_period = IntParameter(10, 30, default=20, space="buy")
-    bb_dev = DecimalParameter(1.5, 3.0, default=2.0, space="buy")
+    # Número de candles antes de começar a analisar (evita NaN em indicadores)
+    startup_candle_count = 50
 
-    # RSI
-    rsi_period = IntParameter(10, 25, default=14, space="buy")
-    rsi_lower = IntParameter(20, 35, default=30, space="buy")
-    rsi_upper = IntParameter(65, 80, default=70, space="buy")
+    # Parâmetros Bollinger (mais estreitos para gerar mais sinais)
+    bb_period = IntParameter(10, 20, default=14, space="buy")
+    bb_dev    = DecimalParameter(1.0, 2.0, default=1.8, space="buy")
 
-    # ADX
-    adx_thr = IntParameter(15, 35, default=25, space="buy")
+    # RSI (para menos restrição, aumentar rsi_upper / diminuir rsi_lower)
+    rsi_period = IntParameter(10, 20, default=14, space="buy")
+    rsi_lower  = IntParameter(25, 40, default=30, space="buy")
+    rsi_upper  = IntParameter(60, 80, default=70, space="buy")
 
-    # Volume
-    vol_ma_len = IntParameter(10, 48, default=24, space="buy")
-    vol_mult = DecimalParameter(1.0, 2.0, default=1.2, space="buy")
+    # ADX (menos restritivo => 15, se quiser mais trades)
+    adx_thr = IntParameter(15, 35, default=20, space="buy")
+
+    # Volume (reduzir vol_mult para permitir mais trades)
+    vol_ma_len = IntParameter(10, 36, default=20, space="buy")
+    vol_mult   = DecimalParameter(1.0, 1.5, default=1.1, space="buy")
 
     # ATR
     atr_period = IntParameter(10, 20, default=14, space="buy")
 
-    # R:R Dinamico
-    rr_min = DecimalParameter(1.5, 3.0, default=2.0, space="buy")
-    atr_factor = DecimalParameter(1.0, 3.0, default=2.0, space="buy")
-    max_stop_factor = DecimalParameter(2.0, 4.0, default=3.0, space="buy")
-
-    # (opcional) se quiser pivot_lookback, embora não estejamos usando pivots nesse ex.
-    pivot_lookback = IntParameter(2, 4, default=2, space="buy")
+    # R:R Dinâmico
+    rr_min         = DecimalParameter(1.3, 2.5, default=1.8, space="buy")
+    atr_factor     = DecimalParameter(0.8, 2.0, default=1.2, space="buy")
+    max_stop_factor= DecimalParameter(1.0, 3.0, default=2.0, space="buy")
 
     # Tempo max do trade em horas
-    max_trade_duration_in_hours = IntParameter(24, 240, default=72, space="buy")
+    max_trade_duration_in_hours = IntParameter(24, 240, default=48, space="buy")
 
-    # --------------
-    # populate_indicators
     def populate_indicators(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
         """
         Calcula Bollinger, RSI, ADX, Volume (SMA), ATR, etc.
-        Necessário passar df["close"] a ta.BBANDS().
+        É fundamental verificar tipos: df['close'] deve ser float e não string.
         """
 
-        # Bollinger
-        bbp = self.bb_period.value
-        bbdev = self.bb_dev.value
-
-        # Importante: Chamar BBANDS com df["close"], não o df inteiro
+        # -------------------------
+        # BOLLINGER BANDS
+        # -------------------------
         upper_bb, mid_bb, lower_bb = ta.BBANDS(
-            df["close"],  # <--- APENAS a série de preços
-            timeperiod=bbp,
-            nbdevup=bbdev,
-            nbdevdn=bbdev,
+            df["close"].astype(float),  # <- garante que está como float
+            timeperiod=self.bb_period.value,
+            nbdevup=self.bb_dev.value,
+            nbdevdn=self.bb_dev.value,
             matype=0,
         )
-        # Converte para float
-        df["bb_upper"] = upper_bb.astype(float)
-        df["bb_mid"] = mid_bb.astype(float)
-        df["bb_lower"] = lower_bb.astype(float)
+        df["bb_upper"] = upper_bb
+        df["bb_mid"]   = mid_bb
+        df["bb_lower"] = lower_bb
 
+        # -------------------------
         # RSI e ADX
-        rsi_p = self.rsi_period.value
-        df["rsi"] = ta.RSI(df["close"], timeperiod=rsi_p)
+        # -------------------------
+        df["rsi"] = ta.RSI(df["close"], timeperiod=self.rsi_period.value)
         df["adx"] = ta.ADX(df)
 
-        # Volume
-        vlen = self.vol_ma_len.value
-        df["vol_ma"] = ta.SMA(df["volume"], timeperiod=vlen)
+        # -------------------------
+        # VOLUME
+        # -------------------------
+        df["vol_ma"] = ta.SMA(df["volume"], timeperiod=self.vol_ma_len.value)
 
+        # -------------------------
         # ATR
+        # -------------------------
         df["atr"] = ta.ATR(df, timeperiod=self.atr_period.value)
 
         return df
 
-    # --------------
-    # populate_entry_trend
     def populate_entry_trend(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
         """
         Identifica sinais de entrada (LONG/SHORT), define TP e SL via calc_takeprofit_stoploss_v4().
+        Ajustes de Bollinger (bb_lower, bb_upper) podem ser feitos se trades forem poucos.
         """
-        df["enter_long"] = 0
-        df["enter_short"] = 0
-        df["enter_tag"] = np.nan
 
-        # Verifica colunas
+        df["enter_long"]  = 0
+        df["enter_short"] = 0
+        df["enter_tag"]   = np.nan
+
+        # Evita candles iniciais com NaN (BB, ATR, etc.)
         cond_data = (
             ~df["bb_upper"].isna() &
             ~df["bb_lower"].isna() &
@@ -253,24 +283,25 @@ class IntegrativeConfluenceStrategy(IStrategy):
         )
 
         # Bollinger: Exemplo => LONG se close < bb_lower, SHORT se close > bb_upper
-        cond_bb_long = df["close"] < df["bb_lower"]
+        cond_bb_long  = df["close"] < df["bb_lower"]
         cond_bb_short = df["close"] > df["bb_upper"]
 
         # RSI e ADX
-        cond_rsi_long = df["rsi"] < self.rsi_upper.value   # ex.: RSI < 70
-        cond_rsi_short= df["rsi"] > self.rsi_lower.value   # ex.: RSI > 30
-        cond_adx = df["adx"] > self.adx_thr.value
+        cond_rsi_long  = df["rsi"] < self.rsi_upper.value
+        cond_rsi_short = df["rsi"] > self.rsi_lower.value
+        cond_adx       = df["adx"] > self.adx_thr.value
 
         # Volume
         cond_vol = df["volume"] > (df["vol_ma"] * self.vol_mult.value)
 
-        # Condições finais
-        cond_long = cond_data & cond_bb_long & cond_rsi_long & cond_adx & cond_vol
-        cond_short= cond_data & cond_bb_short& cond_rsi_short& cond_adx & cond_vol
+        # Monta condições finais
+        cond_long  = cond_data & cond_bb_long  & cond_rsi_long  & cond_adx & cond_vol
+        cond_short = cond_data & cond_bb_short & cond_rsi_short & cond_adx & cond_vol
 
-        long_idxs = df.index[cond_long].tolist()
-        short_idxs= df.index[cond_short].tolist()
+        long_idxs  = df.index[cond_long].tolist()
+        short_idxs = df.index[cond_short].tolist()
 
+        # Loop LONG
         for idx in long_idxs:
             tp_, sl_ = calc_takeprofit_stoploss_v4(
                 dataframe=df,
@@ -279,12 +310,14 @@ class IntegrativeConfluenceStrategy(IStrategy):
                 rr_min=self.rr_min.value,
                 atr_factor=self.atr_factor.value,
                 max_stop_factor=self.max_stop_factor.value,
+                debug=False  # set True p/ logs
             )
             if tp_ is not None and sl_ is not None:
                 tag = f"TP={tp_:.5f}|SL={sl_:.5f}|RR={self.rr_min.value}"
                 df.at[idx, "enter_long"] = 1
-                df.at[idx, "enter_tag"] = tag
+                df.at[idx, "enter_tag"]  = tag
 
+        # Loop SHORT
         for idx in short_idxs:
             tp_, sl_ = calc_takeprofit_stoploss_v4(
                 dataframe=df,
@@ -293,26 +326,23 @@ class IntegrativeConfluenceStrategy(IStrategy):
                 rr_min=self.rr_min.value,
                 atr_factor=self.atr_factor.value,
                 max_stop_factor=self.max_stop_factor.value,
+                debug=False
             )
             if tp_ is not None and sl_ is not None:
                 tag = f"TP={tp_:.5f}|SL={sl_:.5f}|RR={self.rr_min.value}"
                 df.at[idx, "enter_short"] = 1
-                df.at[idx, "enter_tag"] = tag
+                df.at[idx, "enter_tag"]   = tag
 
         return df
 
-    # --------------
-    # populate_exit_trend
     def populate_exit_trend(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
         """
-        Saída básica. O real controle de saída é via custom_stoploss().
+        Saída 'genérica'. O real controle de saída se dá em custom_stoploss().
         """
-        df["exit_long"] = 0
+        df["exit_long"]  = 0
         df["exit_short"] = 0
         return df
 
-    # --------------
-    # custom_stoploss
     def custom_stoploss(
         self,
         pair: str,
@@ -325,20 +355,19 @@ class IntegrativeConfluenceStrategy(IStrategy):
         """
         Lê TP/SL do enter_tag. Se atinge STOP ou TP, encerra.
         Formato do enter_tag: "TP=xxx|SL=yyy|RR=z"
-        Time-based stop => se exceder max_trade_duration_in_hours.
+        Time-based stop => se exceder max_trade_duration_in_hours (encerra).
         """
         if not trade.enter_tag:
             return 1.0
 
+        # Tenta extrair tp_ e sl_
         try:
             parts = trade.enter_tag.split("|")
-            # Ex.: "TP=123.45" => parts[0],  "SL=120.00" => parts[1]
-            tp_val = parts[0].split("=")[1]
-            sl_val = parts[1].split("=")[1]
-            tp_ = float(tp_val)
-            sl_ = float(sl_val)
+            # e.g. "TP=123.45" => parts[0],  "SL=120.00" => parts[1]
+            tp_ = float(parts[0].split("=")[1])
+            sl_ = float(parts[1].split("=")[1])
         except Exception:
-            return 1.0
+            return 1.0  # fallback se algo falhou
 
         # Verifica STOP/TP
         if trade.is_long:
@@ -349,13 +378,14 @@ class IntegrativeConfluenceStrategy(IStrategy):
         else:
             # SHORT
             if current_rate >= sl_:
-                return 0.0
+                return 0.0  # stop
             if current_rate <= tp_:
-                return -0.0001
+                return -0.0001  # take-profit
 
         # Time-based stop
-        opened_since = (current_time - trade.open_date_utc).total_seconds() / 3600.0
-        if opened_since >= self.max_trade_duration_in_hours.value:
+        trade_lifespan_hrs = (current_time - trade.open_date_utc).total_seconds() / 3600
+        if trade_lifespan_hrs >= self.max_trade_duration_in_hours.value:
+            # Encerrar imediatamente
             return -0.0001
 
         return 1.0
