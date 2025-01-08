@@ -1,6 +1,9 @@
 {
   "$schema": "https://schema.freqtrade.io/schema.json",
 
+  "strategy": "IntegrativeConfluenceStrategy",
+  "use_custom_stoploss": true,
+
   "exchange": {
     "name": "binance",
     "ccxt_config": {
@@ -33,8 +36,12 @@
   "stake_amount": "unlimited",
   "tradable_balance_ratio": 0.99,
 
+  // Ajuste o timeframe conforme desejar
   "timeframe": "1h",
-  "timerange": "20220101-20241231",
+
+  // Estenda a data final para garantir que 'custom_stoploss' seja chamado:
+  "timerange": "20220101-20250101",
+
   "dataformat_ohlcv": "json",
   "export": "none",
 
@@ -56,7 +63,5 @@
     "price_side": "other",
     "use_order_book": true,
     "order_book_top": 1
-  },
-
-  "strategy": "IntegrativeConfluenceStrategy"
+  }
 }
