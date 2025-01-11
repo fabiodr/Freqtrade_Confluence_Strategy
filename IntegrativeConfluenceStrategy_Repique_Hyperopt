@@ -97,7 +97,6 @@ def calc_takeprofit_stoploss_v4(
 
     return tp_, sl_
 
-
 ###############################################################################
 # Strategy
 ###############################################################################
@@ -330,9 +329,15 @@ class IntegrativeConfluenceStrategy(IStrategy):
                 f"[custom_stoploss] Checking repique exit (dur_hours={dur_hours:.1f})"
             )
             # Recupera DataFrame analisado para esse par/timeframe
-            df_analyzed = self.dp.get_analyzed_dataframe(pair=pair, timeframe=self.timeframe)
-            # A DP retorna somente o DataFrame (não uma tupla),
-            # então checamos se df_analyzed existe e tem dados
+            res = self.dp.get_analyzed_dataframe(pair=pair, timeframe=self.timeframe)
+
+            # Se 'res' for tupla, extrair o DataFrame
+            if isinstance(res, tuple):
+                df_analyzed = res[0] if len(res) > 0 else None
+            else:
+                df_analyzed = res
+
+            # Checamos se df_analyzed existe e tem dados
             if df_analyzed is not None and not df_analyzed.empty:
                 # Última candle
                 last_candle = df_analyzed.iloc[-1]
