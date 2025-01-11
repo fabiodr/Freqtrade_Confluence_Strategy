@@ -11,7 +11,6 @@ from freqtrade.persistence import Trade
 
 logger = logging.getLogger(__name__)
 
-
 ###############################################################################
 # Função Auxiliar para TP/SL
 ###############################################################################
@@ -42,14 +41,14 @@ def calc_takeprofit_stoploss_v4(
 
     tp_candidates = []
     if is_long:
-        # Candidatos de TP (Bollinger superior, High recente, fallback ATR)
+        # Candidatos de TP: Bollinger superior, High recente, fallback ATR
         if bb_upper > close_:
             tp_candidates.append(bb_upper)
         if recent_high > close_:
             tp_candidates.append(recent_high)
         tp_candidates.append(close_ + atr_factor * atr_)
 
-        # Filtra valores acima do close
+        # Filtra apenas valores acima do close
         tp_candidates = [t for t in tp_candidates if t > close_]
         if not tp_candidates:
             return None, None
@@ -72,7 +71,7 @@ def calc_takeprofit_stoploss_v4(
             tp_candidates.append(recent_low)
         tp_candidates.append(close_ - atr_factor * atr_)
 
-        # Filtra valores abaixo do close
+        # Filtra apenas valores abaixo do close
         tp_candidates = [t for t in tp_candidates if t < close_]
         if not tp_candidates:
             return None, None
@@ -84,7 +83,7 @@ def calc_takeprofit_stoploss_v4(
             return None, None
         actual_stop_dist = sl_ - close_
 
-    # Checagem do stop (entre min e max)
+    # Checagem do stop (entre min_stop_dist e max_stop_dist)
     max_stop_dist = atr_ * max_stop_factor
     min_stop_dist = atr_ * min_stop_dist_factor
     if not (min_stop_dist <= actual_stop_dist <= max_stop_dist):
@@ -92,8 +91,8 @@ def calc_takeprofit_stoploss_v4(
 
     if debug:
         logger.debug(
-            f"[DEBUG calc_tp_sl] idx={idx} is_long={is_long} close={close_:.5f} "
-            f"TP={tp_:.5f} SL={sl_:.5f} stop_dist={actual_stop_dist:.5f}"
+            f"[DEBUG calc_tp_sl] idx={idx}, is_long={is_long}, close={close_:.5f}, "
+            f"TP={tp_:.5f}, SL={sl_:.5f}, stop_dist={actual_stop_dist:.5f}"
         )
 
     return tp_, sl_
@@ -106,8 +105,8 @@ class IntegrativeConfluenceStrategy(IStrategy):
     """
     Estratégia que:
       - Usa Bollinger para reversões (close < bb_lower => LONG; close > bb_upper => SHORT).
-      - RSI/ADX/Volume como filtros de entrada.
-      - Define TP/SL dinamicamente com R:R >= rr_min (calc_takeprofit_stoploss_v4).
+      - RSI, ADX e Volume como filtros de entrada.
+      - Define TP/SL dinamicamente (calc_takeprofit_stoploss_v4) com R:R >= rr_min.
       - custom_stoploss() controla saídas (TP, SL, Time-based).
       - Adiciona lógica de “repique” se a trade exceder repique_check_hours (checando RSI e bb_mid).
     """
@@ -116,13 +115,13 @@ class IntegrativeConfluenceStrategy(IStrategy):
     can_short = True
     timeframe = "1h"
 
-    # ROI e trailing => placeholders (não usado explicitamente, pois confiamos no custom_stoploss)
+    # ROI/trailing => placeholders (confiamos no custom_stoploss)
     minimal_roi = {"0": 1e10}
     stoploss    = -0.99
     trailing_stop = False
 
     # -----------------------------
-    # Parâmetros (otimizáveis via Hyperopt)
+    # Parâmetros otimizáveis
     # -----------------------------
     # Bollinger
     bb_period = IntParameter(10, 30, default=20, space="buy")
@@ -271,9 +270,9 @@ class IntegrativeConfluenceStrategy(IStrategy):
     ) -> float:
         """
         custom_stoploss com logs e lógica de “repique”:
-          - Checa STOP/TP (pelo enter_tag).
-          - Checa time-based stop normal.
-          - Se dur_hours >= repique_check_hours.value, verifica RSI e bb_mid para forçar saída.
+          - Verifica STOP/TP (pelo enter_tag).
+          - Verifica time-based stop normal.
+          - Se dur_hours >= repique_check_hours.value, checa RSI e bb_mid para forçar saída.
         """
         logger.debug(
             f"[custom_stoploss] Checking pair={pair}, trade_id={trade.id}, "
@@ -299,7 +298,7 @@ class IntegrativeConfluenceStrategy(IStrategy):
 
         is_long = (side_.upper() == "LONG")
 
-        # 1) Verifica STOP ou TP
+        # 1) Checa STOP ou TP
         if is_long:
             if current_rate <= sl_:
                 logger.debug("[custom_stoploss] STOP triggered (LONG).")
@@ -316,7 +315,7 @@ class IntegrativeConfluenceStrategy(IStrategy):
                 logger.debug("[custom_stoploss] TAKE-PROFIT triggered (SHORT).")
                 return -0.0001
 
-        # 2) Time-based stop normal
+        # 2) Time-based stop
         dur_hours = (current_time - trade.open_date_utc).total_seconds() / 3600.0
         if dur_hours >= self.max_trade_duration_in_hours.value:
             logger.debug(
@@ -332,9 +331,10 @@ class IntegrativeConfluenceStrategy(IStrategy):
             )
             # Recupera DataFrame analisado para esse par/timeframe
             df_analyzed = self.dp.get_analyzed_dataframe(pair=pair, timeframe=self.timeframe)
-
+            # A DP retorna somente o DataFrame (não uma tupla),
+            # então checamos se df_analyzed existe e tem dados
             if df_analyzed is not None and not df_analyzed.empty:
-                # Pega a última candle
+                # Última candle
                 last_candle = df_analyzed.iloc[-1]
 
                 rsi_now   = last_candle["rsi"]
@@ -347,7 +347,7 @@ class IntegrativeConfluenceStrategy(IStrategy):
                 )
 
                 if is_long:
-                    # Se RSI > repique_rsi_long OU close acima da BB_mid => forçamos saída
+                    # Se RSI > repique_rsi_long ou close acima da BB_mid => forçamos saída
                     if (rsi_now > self.repique_rsi_long.value) or (close_now > bb_mid_now):
                         logger.debug("[custom_stoploss] Repique exit triggered (LONG).")
                         return 0.0
@@ -357,5 +357,5 @@ class IntegrativeConfluenceStrategy(IStrategy):
                         logger.debug("[custom_stoploss] Repique exit triggered (SHORT).")
                         return 0.0
 
-        # Mantém trade aberta
+        # Se nenhuma condição de saída foi atingida, mantém a trade
         return 1.0
