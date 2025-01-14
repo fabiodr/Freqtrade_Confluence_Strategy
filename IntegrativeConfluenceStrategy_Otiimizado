@@ -1,0 +1,477 @@
+import numpy as np
+import pandas as pd
+import talib.abstract as ta
+
+import logging
+from datetime import datetime
+
+from freqtrade.strategy.interface import IStrategy
+from freqtrade.strategy import IntParameter, DecimalParameter
+from freqtrade.persistence import Trade
+
+logger = logging.getLogger(__name__)
+
+
+###############################################################################
+# Função Auxiliar - V4 Otimizada
+# - Calcula TP e SL baseado em ATR, Bollinger, High/Low recentes e R:R dinâmico.
+# - Inclui "Hard Stop" (max_abs_stop) para limitar paradas muito largas.
+###############################################################################
+def calc_takeprofit_stoploss_v4_optimized(
+    dataframe: pd.DataFrame,
+    idx: int,
+    is_long: bool,
+    rr_min: float,
+    atr_factor: float,
+    max_stop_factor: float,
+    min_stop_dist_factor: float,
+    max_abs_stop: float = 0.35,       # "Hard stop" ~ 35%
+    enable_dynamic_rr: bool = True,   # habilita R:R dinâmico com ADX
+    adx_value: float = None,          # se None, assume 25
+    debug: bool = False
+) -> (float, float):
+    """
+    Calcula TP e SL considerando:
+      - Bollinger (upper/lower),
+      - Highs/Lows recentes (últimos 20 candles),
+      - fallback via ATR,
+      - "Hard stop" (max_abs_stop) para evitar stoploss maior que x%,
+      - R:R dinâmico leve (com ADX).
+
+    Retorna (tp, sl). Se (None, None), significa que não há setup válido.
+    """
+    close_ = dataframe.at[idx, "close"]
+    atr_   = dataframe.at[idx, "atr"]
+
+    bb_upper = dataframe.at[idx, "bb_upper"]
+    bb_lower = dataframe.at[idx, "bb_lower"]
+
+    # ADX dinâmico: ajusta rr_min para alta/baixa volatilidade
+    rr_base = rr_min
+    if enable_dynamic_rr and adx_value is not None:
+        if adx_value > 30:
+            rr_base = rr_min + 0.2
+        elif adx_value < 20:
+            rr_base = max(1.2, rr_min - 0.2)
+
+    # High/Low recentes (últimos 20 candles)
+    recent_slice = dataframe.iloc[max(0, idx - 20): idx + 1]
+    recent_high = recent_slice["high"].max()
+    recent_low  = recent_slice["low"].min()
+
+    tp_candidates = []
+
+    if is_long:
+        # ------------------------------------
+        # TP para posição LONG
+        # ------------------------------------
+        if bb_upper > close_:
+            tp_candidates.append(bb_upper)
+        if recent_high > close_:
+            tp_candidates.append(recent_high)
+        # Fallback: ATR
+        tp_candidates.append(close_ + atr_factor * atr_)
+
+        # Filtra TP válido (maior que close)
+        tp_candidates = [t for t in tp_candidates if t > close_]
+        if not tp_candidates:
+            return None, None
+
+        tp_ = min(tp_candidates)
+        dist_tp = tp_ - close_
+
+        # Calcula SL com base em dist_tp / rr_base
+        sl_ = close_ - (dist_tp / rr_base)
+        if sl_ >= close_:
+            # Se SL >= close, não faz sentido (R:R inválido)
+            return None, None
+
+        actual_stop_dist = close_ - sl_
+
+        # Checagem "hard stop": se stop_dist > max_abs_stop * close_, descarta
+        if (actual_stop_dist / close_) > max_abs_stop:
+            return None, None
+
+    else:
+        # ------------------------------------
+        # TP para posição SHORT
+        # ------------------------------------
+        if bb_lower < close_:
+            tp_candidates.append(bb_lower)
+        if recent_low < close_:
+            tp_candidates.append(recent_low)
+        # Fallback: ATR
+        tp_candidates.append(close_ - atr_factor * atr_)
+
+        # Filtra TP válido (menor que close)
+        tp_candidates = [t for t in tp_candidates if t < close_]
+        if not tp_candidates:
+            return None, None
+
+        tp_ = max(tp_candidates)
+        dist_tp = close_ - tp_
+        # Calcula SL
+        sl_ = close_ + (dist_tp / rr_base)
+        if sl_ <= close_:
+            return None, None
+
+        actual_stop_dist = sl_ - close_
+
+        # Checagem "hard stop": se stop_dist > max_abs_stop * close_, descarta
+        if (actual_stop_dist / close_) > max_abs_stop:
+            return None, None
+
+    # ------------------------------------
+    # Check distâncias mínima e máxima
+    # ------------------------------------
+    max_stop_dist = atr_ * max_stop_factor
+    min_stop_dist = atr_ * min_stop_dist_factor
+    if not (min_stop_dist <= actual_stop_dist <= max_stop_dist):
+        # Se não se encaixa nos limites configurados, descarta
+        return None, None
+
+    if debug:
+        logger.debug(
+            f"[calc_takeprofit_stoploss_v4_optimized] idx={idx}, is_long={is_long}, "
+            f"close={close_:.5f}, TP={tp_:.5f}, SL={sl_:.5f}, rr_base={rr_base:.2f}, "
+            f"stop_dist={actual_stop_dist:.5f}"
+        )
+
+    return tp_, sl_
+
+
+###############################################################################
+# Strategy Integrada com Bollinger, RSI, ADX, Volume e SL/TP Dinâmicos
+###############################################################################
+class IntegrativeConfluenceStrategy(IStrategy):
+    """
+    Estratégia principal:
+      - LONG: close < bb_lower, RSI < rsi_upper, ADX acima de adx_thr, volume ok.
+      - SHORT: close > bb_upper, RSI > rsi_lower, ADX acima de adx_thr, volume ok.
+      - TP e SL calculados dinamicamente pela função auxiliar (ATR/Bollinger).
+      - custom_stoploss() gerencia STOP, TP, time-based, repique e break-even.
+    """
+
+    INTERFACE_VERSION = 3
+
+    # Ativa operações de SHORT
+    can_short = True
+
+    # Timeframe principal
+    timeframe = "1h"
+
+    # ROI/trailing => placeholders (usamos custom_stoploss para saídas)
+    minimal_roi = {"0": 1e10}
+    stoploss    = -0.99
+    trailing_stop = False
+
+    # ------------------------------------------------------------------------
+    # Parâmetros otimizáveis - Espaço "buy" (exceto "repique_*" no espaço "sell")
+    # ------------------------------------------------------------------------
+    # Bollinger
+    bb_period = IntParameter(10, 30, default=20, space="buy")
+    bb_dev    = DecimalParameter(1.5, 3.0, default=2.0, space="buy")
+
+    # RSI
+    rsi_period = IntParameter(10, 25, default=14, space="buy")
+    rsi_lower  = IntParameter(20, 35, default=30, space="buy")
+    rsi_upper  = IntParameter(65, 80, default=70, space="buy")
+
+    # ADX
+    adx_thr = IntParameter(15, 35, default=25, space="buy")
+
+    # Volume
+    vol_ma_len = IntParameter(10, 48, default=24, space="buy")
+    vol_mult   = DecimalParameter(1.0, 2.0, default=1.2, space="buy")
+
+    # ATR (para distâncias de SL/TP)
+    atr_period = IntParameter(10, 20, default=14, space="buy")
+
+    # R:R e controle de distâncias
+    rr_min = DecimalParameter(1.5, 3.0, default=1.8, space="buy")
+    atr_factor      = DecimalParameter(1.0, 3.0, default=2.0, space="buy")
+    max_stop_factor = DecimalParameter(2.0, 5.0, default=3.0, space="buy")
+    min_stop_factor = DecimalParameter(0.3, 1.0, default=0.5, space="buy")
+
+    # Hard stop ~ 35%
+    max_abs_stop = DecimalParameter(0.3, 0.5, default=0.35, space="buy",
+                                    optimize=False)
+
+    # Tempo máximo de trade (em horas)
+    max_trade_duration_in_hours = IntParameter(12, 240, default=72, space="buy")
+
+    # ------------------------------------------------------------------------
+    # Parâmetros de "repique" (espaço "sell")
+    # ------------------------------------------------------------------------
+    repique_check_hours = IntParameter(
+        120, 480, default=240, space="sell", optimize=True, load=True
+    )
+    repique_rsi_long = IntParameter(
+        40, 60, default=45, space="sell", optimize=True, load=True
+    )
+    repique_rsi_short = IntParameter(
+        40, 60, default=55, space="sell", optimize=True, load=True
+    )
+
+    # ------------------------------------------------------------------------
+    # POPULATE INDICATORS
+    # ------------------------------------------------------------------------
+    def populate_indicators(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
+        """
+        Calcula indicadores de Bollinger, RSI, ADX, Volume (SMA) e ATR.
+        Adiciona colunas ao DataFrame: ['bb_upper', 'bb_mid', 'bb_lower',
+                                        'rsi', 'adx', 'vol_ma', 'atr']
+        """
+        # Bollinger Bands
+        upper, mid, lower = ta.BBANDS(
+            df["close"],
+            timeperiod=self.bb_period.value,
+            nbdevup=self.bb_dev.value,
+            nbdevdn=self.bb_dev.value,
+            matype=0
+        )
+        df["bb_upper"] = upper.astype(float)
+        df["bb_mid"]   = mid.astype(float)
+        df["bb_lower"] = lower.astype(float)
+
+        # RSI e ADX
+        df["rsi"] = ta.RSI(df["close"], timeperiod=self.rsi_period.value)
+        df["adx"] = ta.ADX(df)
+
+        # Volume (Média móvel simples)
+        df["vol_ma"] = ta.SMA(df["volume"], timeperiod=self.vol_ma_len.value)
+
+        # ATR
+        df["atr"] = ta.ATR(df, timeperiod=self.atr_period.value)
+
+        return df
+
+    # ------------------------------------------------------------------------
+    # POPULATE ENTRY TREND
+    # ------------------------------------------------------------------------
+    def populate_entry_trend(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
+        """
+        Define sinais de entrada (LONG/SHORT) e armazena TP/SL no 'enter_tag'.
+        O custom_stoploss usará essas informações para gerenciar saídas.
+        """
+        df["enter_long"]  = 0
+        df["enter_short"] = 0
+        df["enter_tag"]   = np.nan
+
+        # Condição básica: sem NaN
+        cond_data = (
+            ~df["bb_upper"].isna() &
+            ~df["bb_lower"].isna() &
+            ~df["rsi"].isna() &
+            ~df["adx"].isna() &
+            ~df["vol_ma"].isna() &
+            ~df["atr"].isna()
+        )
+
+        # Bollinger
+        cond_bb_long  = df["close"] < df["bb_lower"]
+        cond_bb_short = df["close"] > df["bb_upper"]
+
+        # RSI
+        cond_rsi_long  = df["rsi"] < self.rsi_upper.value
+        cond_rsi_short = df["rsi"] > self.rsi_lower.value
+
+        # ADX
+        cond_adx = df["adx"] > self.adx_thr.value
+
+        # Volume
+        cond_vol = df["volume"] > (df["vol_ma"] * self.vol_mult.value)
+
+        # Combina as condições
+        cond_long  = cond_data & cond_bb_long  & cond_rsi_long  & cond_adx & cond_vol
+        cond_short = cond_data & cond_bb_short & cond_rsi_short & cond_adx & cond_vol
+
+        # Índices onde há sinal de LONG/SHORT
+        long_idxs  = df.index[cond_long].tolist()
+        short_idxs = df.index[cond_short].tolist()
+
+        # ------------------------------------
+        # LONG entries
+        # ------------------------------------
+        for idx in long_idxs:
+            adx_val = df.at[idx, "adx"] if not np.isnan(df.at[idx, "adx"]) else 25
+            tp_, sl_ = calc_takeprofit_stoploss_v4_optimized(
+                dataframe=df,
+                idx=idx,
+                is_long=True,
+                rr_min=self.rr_min.value,
+                atr_factor=self.atr_factor.value,
+                max_stop_factor=self.max_stop_factor.value,
+                min_stop_dist_factor=self.min_stop_factor.value,
+                max_abs_stop=self.max_abs_stop.value,
+                enable_dynamic_rr=True,
+                adx_value=adx_val,
+                debug=False
+            )
+            if tp_ is not None and sl_ is not None:
+                tag = f"TP={tp_:.5f}|SL={sl_:.5f}|RR={self.rr_min.value}|SIDE=LONG"
+                df.at[idx, "enter_long"] = 1
+                df.at[idx, "enter_tag"]  = tag
+
+                logger.debug(
+                    f"[populate_entry_trend] LONG idx={idx}, TP={tp_:.5f}, SL={sl_:.5f}"
+                )
+
+        # ------------------------------------
+        # SHORT entries
+        # ------------------------------------
+        for idx in short_idxs:
+            adx_val = df.at[idx, "adx"] if not np.isnan(df.at[idx, "adx"]) else 25
+            tp_, sl_ = calc_takeprofit_stoploss_v4_optimized(
+                dataframe=df,
+                idx=idx,
+                is_long=False,
+                rr_min=self.rr_min.value,
+                atr_factor=self.atr_factor.value,
+                max_stop_factor=self.max_stop_factor.value,
+                min_stop_dist_factor=self.min_stop_factor.value,
+                max_abs_stop=self.max_abs_stop.value,
+                enable_dynamic_rr=True,
+                adx_value=adx_val,
+                debug=False
+            )
+            if tp_ is not None and sl_ is not None:
+                tag = f"TP={tp_:.5f}|SL={sl_:.5f}|RR={self.rr_min.value}|SIDE=SHORT"
+                df.at[idx, "enter_short"] = 1
+                df.at[idx, "enter_tag"]   = tag
+
+                logger.debug(
+                    f"[populate_entry_trend] SHORT idx={idx}, TP={tp_:.5f}, SL={sl_:.5f}"
+                )
+
+        return df
+
+    # ------------------------------------------------------------------------
+    # POPULATE EXIT TREND (vazio, pois as saídas são gerenciadas no custom_stoploss)
+    # ------------------------------------------------------------------------
+    def populate_exit_trend(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
+        df["exit_long"]  = 0
+        df["exit_short"] = 0
+        return df
+
+    # ------------------------------------------------------------------------
+    # CUSTOM STOPLOSS
+    # ------------------------------------------------------------------------
+    def custom_stoploss(
+        self,
+        pair: str,
+        trade: Trade,
+        current_time: datetime,
+        current_rate: float,
+        current_profit: float,
+        **kwargs
+    ) -> float:
+        """
+        Gerencia a saída dos trades com:
+          1) Stop e Take Profit (fixos no enter_tag).
+          2) Time-based stop (max_trade_duration_in_hours).
+          3) "Repique" (checa RSI/BB_mid após repique_check_hours).
+          4) Break-even tardio se profit > 5%.
+        Retorna valor entre 0.0 e 1.0 (porcentagem do stoploss),
+        ou < 0.0 para fechar imediatamente, ou 1.0 para manter.
+        """
+        logger.debug(
+            f"[custom_stoploss] Checking pair={pair}, trade_id={trade.id}, "
+            f"enter_tag={trade.enter_tag}, current_rate={current_rate:.4f}, "
+            f"current_profit={current_profit:.2%}, time={current_time}"
+        )
+
+        # Se não há enter_tag, não temos TP/SL, então mantém.
+        if not trade.enter_tag:
+            return 1.0
+
+        try:
+            parts = trade.enter_tag.split("|")
+            # Exemplo de enter_tag: "TP=xxx|SL=yyy|RR=zzz|SIDE=LONG"
+            tp_   = float(parts[0].split("=")[1])  # TP=...
+            sl_   = float(parts[1].split("=")[1])  # SL=...
+            side_ = parts[3].split("=")[1]         # SIDE=LONG/SHORT
+        except Exception as e:
+            logger.warning(
+                f"[custom_stoploss] Could not parse enter_tag: {trade.enter_tag}. "
+                f"Error: {e}"
+            )
+            return 1.0
+
+        is_long = (side_.upper() == "LONG")
+
+        # --------------------
+        # 1) Checa STOP ou TP
+        # --------------------
+        if is_long:
+            if current_rate <= sl_:
+                logger.debug("[custom_stoploss] STOP triggered (LONG).")
+                return 0.0  # Ajusta stoploss = 0% => trade será fechado
+            if current_rate >= tp_:
+                logger.debug("[custom_stoploss] TAKE-PROFIT triggered (LONG).")
+                return -0.0001  # Fecha imediatamente o trade
+        else:
+            # SHORT
+            if current_rate >= sl_:
+                logger.debug("[custom_stoploss] STOP triggered (SHORT).")
+                return 0.0
+            if current_rate <= tp_:
+                logger.debug("[custom_stoploss] TAKE-PROFIT triggered (SHORT).")
+                return -0.0001
+
+        # --------------------
+        # 2) Time-based stop
+        # --------------------
+        dur_hours = (current_time - trade.open_date_utc).total_seconds() / 3600.0
+        if dur_hours >= self.max_trade_duration_in_hours.value:
+            logger.debug(
+                f"[custom_stoploss] TIME-BASED STOP triggered "
+                f"(>{self.max_trade_duration_in_hours.value}h)."
+            )
+            return -0.0001
+
+        # --------------------
+        # 3) Break-even tardio => se profit > +5%
+        # --------------------
+        if current_profit > 0.05:  # 5%
+            logger.debug("[custom_stoploss] Activating break-even => close trade.")
+            return -0.0001
+
+        # --------------------
+        # 4) "Repique" após repique_check_hours
+        #    Se LONG e RSI alto ou close acima da BB_mid => sai.
+        #    Se SHORT e RSI baixo ou close abaixo da BB_mid => sai.
+        # --------------------
+        if dur_hours >= self.repique_check_hours.value:
+            logger.debug(
+                f"[custom_stoploss] Checking repique exit (dur_hours={dur_hours:.1f})"
+            )
+            # Recupera o DF analisado para checar RSI, BB_mid e close
+            res = self.dp.get_analyzed_dataframe(pair=pair, timeframe=self.timeframe)
+            if isinstance(res, tuple):
+                df_analyzed = res[0] if len(res) > 0 else None
+            else:
+                df_analyzed = res
+
+            if df_analyzed is not None and not df_analyzed.empty:
+                last_candle = df_analyzed.iloc[-1]
+                rsi_now    = last_candle["rsi"]
+                bb_mid_now = last_candle["bb_mid"]
+                close_now  = last_candle["close"]
+
+                logger.debug(
+                    f"[custom_stoploss] Repique check: rsi={rsi_now:.2f}, "
+                    f"bb_mid={bb_mid_now:.5f}, close={close_now:.5f}"
+                )
+
+                if is_long:
+                    if (rsi_now > self.repique_rsi_long.value) or (close_now > bb_mid_now):
+                        logger.debug("[custom_stoploss] Repique exit (LONG).")
+                        return 0.0
+                else:
+                    if (rsi_now < self.repique_rsi_short.value) or (close_now < bb_mid_now):
+                        logger.debug("[custom_stoploss] Repique exit (SHORT).")
+                        return 0.0
+
+        # Caso nenhuma condição de saída tenha sido atingida => manter trade
+        return 1.0
