@@ -1,39 +1,20 @@
 {
-  // Quantos trades simultâneos serão abertos no máximo
   "max_open_trades": 5,
-
-  // Moeda de stake principal (no caso, USDT)
   "stake_currency": "USDT",
-
-  // Quanto será usado a cada trade (pode ser "unlimited" para usar todo o saldo disponível)
   "stake_amount": "unlimited",
-
-  // Exibe valores em USD no terminal
   "fiat_display_currency": "USD",
-
-  // Dry-run (simulando trades, sem usar capital real)
   "dry_run": true,
-  // Caso queira testar com valor inicial simulado
   "dry_run_wallet": 1000,
-
-  // Trading no modo SPOT
-  "trading_mode": "spot",
-
-  // Se fosse operar Futuros, preencheria "margin_mode" e "futures_leverage"
-  "margin_mode": null,
+  "trading_mode": "future",
+  "margin_mode": "isolated",
   "futures_leverage": 1,
-
-  // Configurações da Binance
   "exchange": {
-    "name": "binance",
+    "name": "binanceunifiedfutures",
     "key": "YOUR_BINANCE_API_KEY",
     "secret": "YOUR_BINANCE_API_SECRET",
     "ccxt_config": {},
     "ccxt_async_config": {},
-    // Para funcionar melhor com as pairlists dinâmicas, deixamos o whiltelist vazio,
-    // pois a Pairlist definirá quais pares entram. 
     "pair_whitelist": [],
-    // Exemplo de blacklist para evitar tokens alavancados ou perpétuos
     "pair_blacklist": [
       "BNB/.*",
       ".*BEAR.*",
@@ -43,12 +24,6 @@
       ".*PERP"
     ]
   },
-
-  // Pairlists dinâmicas (cada uma filtra/ordena de maneira distinta).
-  // Elas são processadas em cascata:
-  //  1) VolumePairList seleciona os 20 pares com maior volume
-  //  2) VolatilityFilter remove pares muito pouco (ou muito) voláteis
-  //  3) RangeStabilityFilter remove pares com variação fora dos limites desejados
   "pairlists": [
     {
       "method": "VolumePairList",
@@ -69,59 +44,37 @@
       "max_rate_of_change": 1.0
     }
   ],
-
-  // Timeframe de operação da estratégia (mesmo do IntegrativeConfluenceStrategy)
   "timeframe": "1h",
-
-  // A estratégia que você deseja rodar
   "strategy": "IntegrativeConfluenceStrategy",
-
-  // Habilita sinais de exit (caso a estratégia use populate_exit_trend ou custom_stoploss)
   "use_exit_signal": true,
   "exit_profit_only": false,
   "ignore_roi_if_buy_signal": false,
-
-  // Tipos de ordens
   "order_types": {
     "entry": "limit",
     "exit": "limit",
     "stoploss": "market",
     "stoploss_on_exchange": false
   },
-
-  // Como o tempo de vida dessas ordens será tratado na exchange
   "order_time_in_force": {
     "entry": "gtc",
     "exit": "gtc"
   },
-
-  // Timeout de ordens não preenchidas
   "unfilledtimeout": {
     "entry": 10,
     "exit": 10,
     "exit_timeout_countdown": true,
     "unit": "minutes"
   },
-
-  // Desabilita algumas checagens de DataFrame (pode deixar "false" se preferir)
   "disable_dataframe_checks": false,
-
-  // Se sua estratégia permite LONG e SHORT, mantenha "both"
   "enter_side": "both",
   "exit_side": "both",
-
-  // Ativa shorting
   "shorting": {
     "enabled": true
   },
-
-  // Outras configurações diversas
   "forcebuy_enable": false,
   "experimental": {
     "disable_dataframe_checks": false
   },
-
-  // Exemplos de logging e API (opcional)
   "logger": {
     "loglevel": "info",
     "logfile": "freqtrade.log",
