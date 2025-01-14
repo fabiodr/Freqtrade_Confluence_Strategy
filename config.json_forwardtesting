@@ -10,8 +10,8 @@
   "futures_leverage": 5,
   "exchange": {
     "name": "binanceusdm",
-    "key": "2gJVHWbsoKvKbTxmEfHlzAvBnAKcOZLroSDRL9vkdReU6919GR74cabrsWRG7QAj",
-    "secret": "amvtJmCxfBnG0D47xT5muLbSjsZR1KcHSPBMCakK87r3D0cZedfP1xPmmkDgraA8",
+    "key": "YOUR_BINANCE_API_KEY",
+    "secret": "YOUR_BINANCE_API_SECRET",
     "ccxt_config": {
       "options": {
         "defaultType": "future"
@@ -53,6 +53,7 @@
   "use_exit_signal": true,
   "exit_profit_only": false,
   "ignore_roi_if_entry_signal": false,
+
   "order_types": {
     "entry": "limit",
     "exit": "limit",
@@ -69,28 +70,43 @@
     "exit_timeout_countdown": true,
     "unit": "minutes"
   },
+
   "disable_dataframe_checks": false,
   "enter_side": "both",
   "exit_side": "both",
   "shorting": {
     "enabled": true
   },
+
   "force_entry_enable": false,
   "experimental": {
     "disable_dataframe_checks": false
   },
+
   "logger": {
     "loglevel": "info",
     "logfile": "freqtrade.log",
     "rotate": true,
     "rotation": "1 week"
   },
+
   "api_server": {
     "enabled": true,
     "listen_ip_address": "127.0.0.1",
     "listen_port": 8080,
+    "username": "apiuser",
+    "password": "apipass",
     "verbosity": "error",
     "enable_openapi": false,
     "jwt_secret_key": "some_random_secret_key"
+  },
+
+  "exit_pricing": {
+    "enabled": true,
+    "price_side": "ask",
+    "use_order_book": false,
+    "order_book_depth": 1,
+    "fallback": "mid_price",
+    "skip_invalid_size_strats": false
   }
 }
