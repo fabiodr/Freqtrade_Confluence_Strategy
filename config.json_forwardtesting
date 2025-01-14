@@ -9,9 +9,9 @@
   "margin_mode": "isolated",
   "futures_leverage": 5,
   "exchange": {
-    "name": "binanceunifiedfutures",
-    "key": "YOUR_BINANCE_API_KEY",
-    "secret": "YOUR_BINANCE_API_SECRET",
+    "name": "binanceusdm",
+    "key": "2gJVHWbsoKvKbTxmEfHlzAvBnAKcOZLroSDRL9vkdReU6919GR74cabrsWRG7QAj",
+    "secret": "amvtJmCxfBnG0D47xT5muLbSjsZR1KcHSPBMCakK87r3D0cZedfP1xPmmkDgraA8",
     "ccxt_config": {
       "options": {
         "defaultType": "future"
@@ -52,7 +52,7 @@
   "strategy": "IntegrativeConfluenceStrategy",
   "use_exit_signal": true,
   "exit_profit_only": false,
-  "ignore_roi_if_buy_signal": false,
+  "ignore_roi_if_entry_signal": false,
   "order_types": {
     "entry": "limit",
     "exit": "limit",
@@ -75,7 +75,7 @@
   "shorting": {
     "enabled": true
   },
-  "forcebuy_enable": false,
+  "force_entry_enable": false,
   "experimental": {
     "disable_dataframe_checks": false
   },
