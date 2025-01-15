@@ -21,7 +21,6 @@
       }
     },
     "ccxt_async_config": {},
-
     "pair_whitelist": [],
     "pair_blacklist": [
       "BNB/.*",
@@ -74,7 +73,6 @@
     "entry": "gtc",
     "exit": "gtc"
   },
-
   "unfilledtimeout": {
     "entry": 10,
     "exit": 10,
@@ -118,7 +116,6 @@
     "use_order_book": false,
     "order_book_top": 1
   },
-
   "exit_pricing": {
     "enabled": true,
     "price_side": "ask",
