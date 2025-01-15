@@ -35,7 +35,9 @@
       "method": "VolumePairList",
       "number_assets": 20,
       "sort_key": "quoteVolume",
-      "min_value": 0
+      "min_value": 0,
+      "stats_source": "ohlcv",
+      "ticker_interval": "1h"
     },
     {
       "method": "VolatilityFilter",
