@@ -1,4 +1,5 @@
 {
+  "$schema": "https://schema.freqtrade.io/schema.json",
   "max_open_trades": 5,
   "stake_currency": "USDT",
   "stake_amount": "unlimited",
@@ -19,7 +20,9 @@
       }
     },
     "ccxt_async_config": {},
-    "pair_whitelist": [ ".*USDT" ],
+    "pair_whitelist": [
+      ".*USDT"
+    ],
     "pair_blacklist": [
       "BNB/.*",
       ".*BEAR.*",
@@ -59,7 +62,6 @@
 
   "timeframe": "1h",
   "strategy": "IntegrativeConfluenceStrategy",
-
   "use_exit_signal": true,
   "exit_profit_only": false,
   "ignore_roi_if_entry_signal": false,
@@ -86,6 +88,7 @@
   "disable_dataframe_checks": false,
   "enter_side": "both",
   "exit_side": "both",
+
   "shorting": {
     "enabled": true
   },
@@ -118,7 +121,6 @@
     "use_order_book": false,
     "order_book_top": 1
   },
-
   "exit_pricing": {
     "enabled": true,
     "price_side": "ask",
@@ -135,6 +137,7 @@
     "1847": 0
   },
   "stoploss": -0.272,
+
   "trailing_stop": false,
   "trailing_stop_positive_offset": 0.0,
   "trailing_only_offset_is_reached": false,
