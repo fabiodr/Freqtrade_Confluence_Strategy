@@ -110,6 +110,7 @@ def calc_takeprofit_stoploss_v4_optimized(
 
         tp_ = max(tp_candidates)
         dist_tp = close_ - tp_
+
         # Calcula SL
         sl_ = close_ + (dist_tp / rr_base)
         if sl_ <= close_:
@@ -160,21 +161,17 @@ class IntegrativeConfluenceStrategy(IStrategy):
     # Timeframe principal
     timeframe = "1h"
 
-    # ------------------------------------------------------------------------
-    # MELHORIAS: somente um candle por vez, e histórico mínimo
-    # ------------------------------------------------------------------------
+    # Só processa candles novos e precisa de histórico para os indicadores
     process_only_new_candles = True
-    startup_candle_count = 240  # Ajuste conforme a maior janela de indicadores
+    startup_candle_count = 240
 
-    # ------------------------------------------------------------------------
-    # ROI/trailing => placeholders (usamos custom_stoploss para saídas)
-    # ------------------------------------------------------------------------
-    minimal_roi = {"0": 1e10}  # desativando saída padrão do Freqtrade
+    # ROI/trailing => placeholders (saídas são customizadas no custom_stoploss)
+    minimal_roi = {"0": 1e10}
     stoploss    = -0.99
     trailing_stop = False
 
     # ------------------------------------------------------------------------
-    # Parâmetros otimizáveis - Espaço "buy"
+    # Parâmetros otimizáveis - Espaço "buy" (exceto "repique_*" no espaço "sell")
     # ------------------------------------------------------------------------
     # Bollinger
     bb_period = IntParameter(10, 30, default=20, space="buy")
@@ -226,9 +223,7 @@ class IntegrativeConfluenceStrategy(IStrategy):
     # ------------------------------------------------------------------------
     def populate_indicators(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
         """
-        Calcula indicadores de Bollinger, RSI, ADX, Volume (SMA) e ATR.
-        Adiciona colunas ao DataFrame: ['bb_upper', 'bb_mid', 'bb_lower',
-                                        'rsi', 'adx', 'vol_ma', 'atr']
+        Calcula indicadores: Bollinger, RSI, ADX, Volume (SMA) e ATR.
         """
         # Bollinger Bands
         upper, mid, lower = ta.BBANDS(
@@ -259,12 +254,14 @@ class IntegrativeConfluenceStrategy(IStrategy):
     # ------------------------------------------------------------------------
     def populate_entry_trend(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
         """
-        Define sinais de entrada (LONG/SHORT) e armazena TP/SL no 'enter_tag'.
-        O custom_stoploss usará essas informações para gerenciar saídas.
+        Define sinais de entrada (LONG/SHORT) e atribui TP/SL (via enter_tag).
         """
         df["enter_long"]  = 0
         df["enter_short"] = 0
+
+        # Para evitar FutureWarning ao inserir strings:
         df["enter_tag"]   = np.nan
+        df["enter_tag"]   = df["enter_tag"].astype("object")
 
         # Condição básica: sem NaN
         cond_data = (
@@ -355,7 +352,7 @@ class IntegrativeConfluenceStrategy(IStrategy):
         return df
 
     # ------------------------------------------------------------------------
-    # POPULATE EXIT TREND (vazio, pois as saídas são gerenciadas no custom_stoploss)
+    # POPULATE EXIT TREND
     # ------------------------------------------------------------------------
     def populate_exit_trend(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
         df["exit_long"]  = 0
@@ -414,10 +411,10 @@ class IntegrativeConfluenceStrategy(IStrategy):
         if is_long:
             if current_rate <= sl_:
                 logger.debug("[custom_stoploss] STOP triggered (LONG).")
-                return 0.0  # Ajusta stoploss = 0% => trade será fechado
+                return 0.0  # Fechar trade
             if current_rate >= tp_:
                 logger.debug("[custom_stoploss] TAKE-PROFIT triggered (LONG).")
-                return -0.0001  # Fecha imediatamente o trade
+                return -0.0001  # Fechar imediatamente
         else:
             # SHORT
             if current_rate >= sl_:
@@ -447,14 +444,12 @@ class IntegrativeConfluenceStrategy(IStrategy):
 
         # --------------------
         # 4) "Repique" após repique_check_hours
-        #    Se LONG e RSI alto ou close acima da BB_mid => sai.
-        #    Se SHORT e RSI baixo ou close abaixo da BB_mid => sai.
         # --------------------
         if dur_hours >= self.repique_check_hours.value:
             logger.debug(
                 f"[custom_stoploss] Checking repique exit (dur_hours={dur_hours:.1f})"
             )
-            # Recupera o DF analisado para checar RSI, BB_mid e close
+            # Recupera DF para checar RSI, BB_mid e close atual
             res = self.dp.get_analyzed_dataframe(pair=pair, timeframe=self.timeframe)
             if isinstance(res, tuple):
                 df_analyzed = res[0] if len(res) > 0 else None
@@ -481,5 +476,5 @@ class IntegrativeConfluenceStrategy(IStrategy):
                         logger.debug("[custom_stoploss] Repique exit (SHORT).")
                         return 0.0
 
-        # Caso nenhuma condição de saída tenha sido atingida => manter trade
+        # Se nada foi acionado, manter o trade
         return 1.0
