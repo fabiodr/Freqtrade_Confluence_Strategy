@@ -1,67 +1,101 @@
 {
-  "$schema": "https://schema.freqtrade.io/schema.json",
-
-  "strategy": "IntegrativeConfluenceStrategy",
-  "use_custom_stoploss": true,
+  "max_open_trades": 5,
+  "stake_currency": "USDT",
+  "stake_amount": "unlimited",
+  "fiat_display_currency": "USD",
+  "dry_run": true,
+  "dry_run_wallet": 1000,
+  "trading_mode": "futures",
+  "margin_mode": "isolated",
+  "futures_leverage": 5,
 
   "exchange": {
-    "name": "binance",
+    "name": "binanceusdm",
+    "key": "YOUR_BINANCE_API_KEY",
+    "secret": "YOUR_BINANCE_API_SECRET",
     "ccxt_config": {
-      "enableRateLimit": true,
-      "options": {
-        "defaultType": "future",
-        "defaultMarginMode": "isolated"
-      }
+      "options": { "defaultType": "future" }
     },
-    "pair_whitelist": [
-      "BTC/USDT:USDT",
-      "ETH/USDT:USDT",
-      "LTC/USDT:USDT",
-      "LINK/USDT:USDT"
-    ]
+    "pair_whitelist": [ ".*USDT" ],
+    "pair_blacklist": [ "BNB/.*", ".*BEAR.*", ".*BULL.*", "UP.*", "DOWN.*", ".*PERP" ]
   },
 
   "pairlists": [
     {
-      "method": "StaticPairList"
+      "method": "VolumePairList",
+      "number_assets": 20,
+      "sort_key": "quoteVolume",
+      "min_value": 0,
+      "stats_source": "ohlcv",
+      "exchange_timeframe": "1h"
     }
   ],
 
-  "trading_mode": "futures",
-  "margin_mode": "isolated",
-  "dry_run": true,
-
-  "stake_currency": "USDT",
-  "max_open_trades": 5,
-  "stake_amount": "unlimited",
-  "tradable_balance_ratio": 0.99,
-
-  // Ajuste o timeframe conforme desejar
   "timeframe": "1h",
+  "strategy": "IntegrativeConfluenceStrategy",
 
-  // Estenda a data final para garantir que 'custom_stoploss' seja chamado:
-  "timerange": "20220101-20250101",
-
-  "dataformat_ohlcv": "json",
-  "export": "none",
+  "use_exit_signal": true,
+  "exit_profit_only": false,
+  "ignore_roi_if_entry_signal": false,
 
   "order_types": {
-    "entry": "market",
-    "exit": "market",
+    "entry": "limit",
+    "exit": "limit",
     "stoploss": "market",
     "stoploss_on_exchange": false,
-    "stoploss_on_exchange_interval": 60
+    "emergency_exit": "market"
+  },
+  "order_time_in_force": {
+    "entry": "gtc",
+    "exit": "gtc"
   },
 
   "entry_pricing": {
-    "price_side": "other",
-    "use_order_book": true,
+    "price_side": "same",
+    "use_order_book": true,      // IMPORTANTE
     "order_book_top": 1
   },
-
   "exit_pricing": {
-    "price_side": "other",
-    "use_order_book": true,
-    "order_book_top": 1
-  }
+    "enabled": true,
+    "price_side": "same",
+    "use_order_book": true,      // IMPORTANTE
+    "order_book_depth": 1,
+    "fallback": "mid_price",
+    "skip_invalid_size_strats": false
+  },
+
+  "unfilledtimeout": {
+    "entry": 10,
+    "exit": 10,
+    "exit_timeout_countdown": true,
+    "exit_timeout_count": 0,
+    "unit": "minutes"
+  },
+
+  "disable_dataframe_checks": false,
+  "shorting": { "enabled": true },
+  "force_entry_enable": false,
+
+  "minimal_roi": {
+    "0": 0.295,
+    "455": 0.185,
+    "791": 0.076,
+    "1847": 0
+  },
+  "stoploss": -0.272,
+  "trailing_stop": false,
+  "trailing_stop_positive_offset": 0.0,
+  "trailing_only_offset_is_reached": false,
+
+  "api_server": {
+    "enabled": true,
+    "listen_ip_address": "127.0.0.1",
+    "listen_port": 8080,
+    "username": "apiuser",
+    "password": "apipass"
+  },
+
+  "internals": {},
+  "dataformat_ohlcv": "feather",
+  "dataformat_trades": "feather"
 }
