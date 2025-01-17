@@ -52,13 +52,13 @@
 
   "entry_pricing": {
     "price_side": "same",
-    "use_order_book": true,      // IMPORTANTE
+    "use_order_book": true,    
     "order_book_top": 1
   },
   "exit_pricing": {
     "enabled": true,
     "price_side": "same",
-    "use_order_book": true,      // IMPORTANTE
+    "use_order_book": true,     
     "order_book_depth": 1,
     "fallback": "mid_price",
     "skip_invalid_size_strats": false
