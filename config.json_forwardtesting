@@ -1,5 +1,6 @@
 {
   "$schema": "https://schema.freqtrade.io/schema.json",
+  "initial_state": "running",
   "max_open_trades": 5,
   "stake_currency": "USDT",
   "stake_amount": "unlimited",
