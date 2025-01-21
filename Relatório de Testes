@@ -1,0 +1,160 @@
+Relatório Organizado de Testes e Parâmetros: Forward Testing
+
+1. Revisão e Teste de Configurações Gerais
+
+1.1 Stop Loss e R:R Dinâmico
+	•	Configuração Atual: Stop Loss fixo em -27%, ajustado dinamicamente usando ATR para adequação automática de SL e TP.
+	•	Objetivo:
+	•	Garantir que o R:R mínimo seja respeitado, mesmo em cenários de alta volatilidade.
+	•	Proteger o capital contra perdas excessivas em movimentos adversos.
+	•	Testes Recomendados:
+	•	Comparar R:R dinâmico com SL/TP fixo em diferentes condições de mercado.
+	•	Testar impacto de rr_min variando entre 1.5 e 2.5.
+	•	Resultado Esperado:
+	•	Ajustes eficientes para SL/TP e menor frequência de SL longo.
+
+1.2 TP Parcial e Trailing Stop
+	•	Configuração Atual: Proposta de implementar TP parcial e trailing stop, especialmente em tendências fortes.
+	•	Objetivo:
+	•	Maximizar lucros em movimentos de alta continuidade.
+	•	Reduzir exposição em mercados laterais ou de alta volatilidade.
+	•	Testes Recomendados:
+	•	Comparar SL/TP fixo com trailing stop em cenários voláteis.
+	•	Avaliar a implementação de um TP2 dinâmico.
+	•	Resultado Esperado:
+	•	Aumento no ROI em tendências prolongadas.
+
+1.3 Validação de Tendência (Long/Short)
+	•	Configuração Atual: Sinais baseados em toques na BB sem filtro adicional de tendência.
+	•	Objetivo:
+	•	Evitar entradas contra a tendência principal.
+	•	Testes Recomendados:
+	•	Usar Supertrend, EMAs ou Ishimoku como confirmadores.
+	•	Comparar sinais entre timeframes (1h e 4h).
+	•	Resultado Esperado:
+	•	Redução de sinais falsos e maior precisão nas reversões.
+
+1.4 Filtragem de Pares
+	•	Critérios:
+	•	Volume mínimo, tempo de existência e market cap.
+	•	Objetivo:
+	•	Excluir pares com baixa liquidez e alta manipulação.
+	•	Testes Recomendados:
+	•	Ajustar volume mínimo para diferentes categorias de ativos.
+	•	Resultado Esperado:
+	•	Melhor qualidade de sinais e menor número de operações arriscadas.
+
+1.5 Estratégia de Repique
+	•	Configuração Atual:
+	•	Uso de repique_check_hours e RSI para encerramento de posições após repique.
+	•	Testes Recomendados:
+	•	Variar tempos mínimos (120h, 240h, 480h) e ajustar RSI thresholds.
+	•	Testar bb_mid como referência para repiques.
+	•	Resultado Esperado:
+	•	Maior eficiência em saídas estratégicas.
+
+1.6 Gestão de Risco
+	•	Configuração Atual:
+	•	Percentual de capital por operação e limite de operações ainda não configurados.
+	•	Objetivo:
+	•	Limitar exposição ao risco global.
+	•	Testes Recomendados:
+	•	Configurar stake como 1-5% do saldo.
+	•	Resultado Esperado:
+	•	Melhor controle de drawdown.
+
+1.7 Alavancagem Dinâmica
+	•	Configuração Atual:
+	•	Alavancagem estática de 5x.
+	•	Testes Recomendados:
+	•	Testar alavancagem dinâmica baseada em volatilidade.
+	•	Resultado Esperado:
+	•	Ajuste de risco conforme condições de mercado.
+
+1.8 ROI Variações
+	•	Configuração Atual:
+
+"minimal_roi": { "0": 0.295, "455": 0.185, "791": 0.076, "1847": 0 }
+
+
+	•	Testes Recomendados:
+	•	Alterar tempos e percentuais para cenários de mercado lateral e tendência.
+	•	Resultado Esperado:
+	•	Melhor adaptação para mercados com diferentes características.
+
+1.9 Multi-Modelos
+	•	Configuração Atual:
+	•	Apenas um modelo em execução por vez.
+	•	Testes Recomendados:
+	•	Executar múltiplos modelos simultaneamente para avaliar sinergias.
+	•	Resultado Esperado:
+	•	Diversificação de estratégias e menor risco concentrado.
+
+2. Indicadores Parametrizáveis
+
+2.1 Bollinger Bands
+	•	Descrição: Identifica reversões e rompimentos extremos.
+	•	Parâmetros:
+	•	bb_period: Período. (Default: 20)
+	•	bb_dev: Desvio padrão. (Default: 2.0)
+
+2.2 RSI
+	•	Descrição: Valida sobrecompra/sobrevenda.
+	•	Parâmetros:
+	•	rsi_period: Default: 14.
+	•	rsi_lower: Default: 30.
+	•	rsi_upper: Default: 70.
+
+2.3 ADX
+	•	Descrição: Mede força da tendência.
+	•	Parâmetros:
+	•	adx_thr: Default: 25.
+
+2.4 Volume
+	•	Descrição: Filtra sinais com base em liquidez.
+	•	Parâmetros:
+	•	vol_ma_len: Default: 24.
+	•	vol_mult: Default: 1.2.
+
+2.5 ATR
+	•	Descrição: Calcula SL/TP dinâmicos.
+	•	Parâmetros:
+	•	atr_period: Default: 14.
+
+2.6 R:R Dinâmico
+	•	Descrição: Define SL/TP conforme volatilidade.
+	•	Parâmetros:
+	•	rr_min: Default: 1.8.
+	•	atr_factor: Default: 2.0.
+	•	max_stop_factor: Default: 3.0.
+	•	min_stop_factor: Default: 0.5.
+	•	max_abs_stop: Default: 0.35.
+
+2.7 Parâmetros de Repique
+	•	Descrição: Fecha trades com base em RSI e tempo mínimo.
+	•	Parâmetros:
+	•	repique_check_hours: Default: 240.
+	•	repique_rsi_long: Default: 45.
+	•	repique_rsi_short: Default: 55.
+
+3. Testes Recomendados para Reversão e Confirmação
+	1.	Reversão no BB Upper/Lower:
+	•	Confirmar reversão com RSI abaixo de 30 (LONG) ou acima de 70 (SHORT).
+	•	Testar Supertrend como filtro adicional.
+	2.	Confirmação de Tendência:
+	•	Usar EMAs cruzando para validação.
+	•	Comparar toques na BB Mid após rompimento.
+	3.	TP Parcial e Extensão:
+	•	Implementar TP1 (parcial) e expandir para TP2 em tendências fortes.
+	•	Testar trailing stop após atingir 50% de lucro esperado.
+
+4. Recomendações
+	•	Para Mais Trades:
+	•	Relaxar adx_thr e rr_min.
+	•	Ajustar bb_dev para bandas mais estreitas.
+	•	Validação Adicional:
+	•	Adicionar Supertrend ou EMAs como confirmadores de tendência.
+	•	Filtragem de Pares:
+	•	Focar em pares com maior volume e market cap.
+
+Essa versão orienta testes práticos em torno de reversões, confirmações e otimização de TP/SL dinâmico.
