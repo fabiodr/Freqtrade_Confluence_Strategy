@@ -1,0 +1,149 @@
+{
+  "$schema": "https://schema.freqtrade.io/schema.json",
+  "initial_state": "running",
+  "max_open_trades": 5,
+  "stake_currency": "USDT",
+  "stake_amount": "unlimited",
+  "fiat_display_currency": "USD",
+  "dry_run": true,
+  "dry_run_wallet": 1000,
+  "trading_mode": "futures",
+  "margin_mode": "isolated",
+  "futures_leverage": 5,
+
+  "exchange": {
+    "name": "binanceusdm",
+    "key": "YOUR_BINANCE_API_KEY",
+    "secret": "YOUR_BINANCE_API_SECRET",
+    "ccxt_config": {
+      "options": {
+        "defaultType": "future"
+      }
+    },
+    "ccxt_async_config": {},
+    "pair_whitelist": [
+      ".*USDT"
+    ],
+    "pair_blacklist": [
+      "BNB/.*",
+      ".*BEAR.*",
+      ".*BULL.*",
+      "UP.*",
+      "DOWN.*",
+      ".*PERP"
+    ]
+  },
+
+  "pairlists": [
+    {
+      "method": "VolumePairList",
+      "number_assets": 20,
+      "sort_key": "volume",
+      "min_value": 0,
+      "stats_source": "ohlcv",
+      "exchange_timeframe": "1h"
+    },
+    {
+      "method": "VolatilityFilter",
+      "lookback_days": 7,
+      "min_volatility": 0.02,
+      "max_volatility": 0.8,
+      "stats_source": "ohlcv",
+      "exchange_timeframe": "1h"
+    },
+    {
+      "method": "RangeStabilityFilter",
+      "lookback_days": 7,
+      "min_rate_of_change": 0.01,
+      "max_rate_of_change": 1.0,
+      "stats_source": "ohlcv",
+      "exchange_timeframe": "1h"
+    }
+  ],
+
+  "timeframe": "1h",
+  "strategy": "IntegrativeConfluenceStrategy",
+  "use_exit_signal": true,
+  "exit_profit_only": false,
+  "ignore_roi_if_entry_signal": false,
+
+  "order_types": {
+    "entry": "limit",
+    "exit": "limit",
+    "stoploss": "market",
+    "stoploss_on_exchange": false,
+    "emergency_exit": "market"
+  },
+  "order_time_in_force": {
+    "entry": "gtc",
+    "exit": "gtc"
+  },
+  "unfilledtimeout": {
+    "entry": 10,
+    "exit": 10,
+    "exit_timeout_countdown": true,
+    "exit_timeout_count": 0,
+    "unit": "minutes"
+  },
+
+  "disable_dataframe_checks": false,
+  "enter_side": "both",
+  "exit_side": "both",
+
+  "shorting": {
+    "enabled": true
+  },
+  "force_entry_enable": false,
+
+  "experimental": {
+    "disable_dataframe_checks": false
+  },
+
+  "logger": {
+    "loglevel": "info",
+    "logfile": "freqtrade.log",
+    "rotate": true,
+    "rotation": "1 week"
+  },
+
+  "api_server": {
+    "enabled": true,
+    "listen_ip_address": "127.0.0.1",
+    "listen_port": 8080,
+    "username": "apiuser",
+    "password": "apipass",
+    "verbosity": "error",
+    "enable_openapi": false,
+    "jwt_secret_key": "some_random_secret_key"
+  },
+
+  "entry_pricing": {
+    "price_side": "same",
+    "use_order_book": false,
+    "order_book_top": 1
+  },
+  "exit_pricing": {
+    "enabled": true,
+    "price_side": "ask",
+    "use_order_book": false,
+    "order_book_depth": 1,
+    "fallback": "mid_price",
+    "skip_invalid_size_strats": false
+  },
+
+  "minimal_roi": {
+    "0": 0.295,
+    "455": 0.185,
+    "791": 0.076,
+    "1847": 0
+  },
+  "stoploss": -0.272,
+
+  "trailing_stop": false,
+  "trailing_stop_positive_offset": 0.0,
+  "trailing_only_offset_is_reached": false,
+
+  "internals": {},
+  "dataformat_ohlcv": "feather",
+  "dataformat_trades": "feather"
+}
